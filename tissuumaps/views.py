@@ -5,7 +5,7 @@ import gzip
 import importlib
 import io
 import json
-import os
+from pathlib import Path
 import threading
 from threading import Lock
 import time
@@ -33,6 +33,9 @@ from flask import (
     send_from_directory,
 )
 
+# Global variables
+g_root_dir = Path(".")
+
 
 def check_auth(username, password):
     if username == "username" and password == "password":
@@ -55,14 +58,18 @@ def requires_auth(f):
     def decorated(*args, **kwargs):
         if not "path" in kwargs.keys():
             return f(*args, **kwargs)
-        path = os.path.abspath(os.path.join(app.basedir, kwargs["path"]))
-        activeFolder = os.path.dirname(path)
-        while os.path.dirname(activeFolder) != activeFolder and not os.path.isfile(
-            activeFolder + "/auth"
+        path = (g_root_dir / kwargs["path"]).resolve()
+        # Checks at every level if there is an auth file containing credentials
+        activeFolder = path.parent
+        while (
+            activeFolder.parent != activeFolder
+            and not (activeFolder / "auth").is_file()
         ):
-            activeFolder = os.path.dirname(activeFolder)
-        if os.path.isfile(activeFolder + "/auth"):
-            with open(activeFolder + "/auth", "r") as file:
+            activeFolder = activeFolder.parent
+        # If an auth file is found, the credentials are used for authentication
+        authFile = activeFolder / "auth"
+        if authFile.is_file():
+            with open(authFile, "r") as file:
                 data = file.read().replace("\n", "")
                 user, password = [u.strip() for u in data.split(";")]
             auth = request.authorization
@@ -82,22 +89,22 @@ class PILBytesIO(io.BytesIO):
 
 
 class ImageConverter:
-    def __init__(self, inputImage, outputImage):
-        self.inputImage = inputImage
-        self.outputImage = outputImage
+    def __init__(self, input_image, output_image):
+        self.input_image = Path(input_image)
+        self.output_image = Path(output_image)
 
     def convert(self):
         logging.debug(
             "Converting:",
-            self.inputImage,
-            self.outputImage,
-            os.path.isfile(self.outputImage),
+            self.input_image,
+            self.output_image,
+            self.output_image.is_file(),
         )
-        if not os.path.isfile(self.outputImage):
+        if not self.output_image.is_file():
 
             def convertThread():
                 try:
-                    imgVips = pyvips.Image.new_from_file(self.inputImage)
+                    imgVips = pyvips.Image.new_from_file(self.input_image)
                     minVal = imgVips.percent(0)
                     maxVal = imgVips.percent(99)
                     if minVal == maxVal:
@@ -108,7 +115,7 @@ class ImageConverter:
                     imgVips = (imgVips > 255).ifthenelse(255, imgVips)
                     imgVips = imgVips.scaleimage()
                     imgVips.tiffsave(
-                        self.outputImage,
+                        self.output_image,
                         pyramid=True,
                         tile=True,
                         tile_width=256,
@@ -127,7 +134,7 @@ class ImageConverter:
             threading.Thread(target=convertThread, daemon=True).start()
             while not self.convertDone:
                 time.sleep(0.02)
-        return self.outputImage
+        return self.output_image
 
 
 class _SlideCache(object):
@@ -146,13 +153,6 @@ class _SlideCache(object):
                 return slide
 
         osr = OpenSlide(path)
-        # try:
-        #    osr = OpenSlide(path)
-        # except:
-        #    osr = ImageSlide(path)
-        # Fix for 16 bits tiff files
-        # if osr._image.getextrema()[1] > 256:
-        #     osr._image = osr._image.point(lambda i:i*(1./256)).convert('L')
 
         slide = DeepZoomGenerator(osr, **self.dz_opts)
         slide.osr = osr
@@ -192,21 +192,23 @@ class _SlideCache(object):
 
 
 class _Directory(object):
-    def __init__(self, basedir, relpath="", max_depth=4, filter=None):
-        self.name = os.path.basename(relpath)
+    def __init__(self, relpath=Path(), max_depth=4, filter=None):
+        self.name = relpath.name
         self.children = []
         if max_depth != 0:
             try:
-                for name in sorted(os.listdir(os.path.join(basedir, relpath))):
-                    if ".tissuumaps" in name:
+                for name in sorted((g_root_dir / relpath).iterdir()):
+                    if ".tissuumaps" in name.parts:
                         continue
-                    if "private" in name:
+                    if "private" in name.parts:
                         continue
-                    cur_relpath = os.path.join(relpath, name)
-                    cur_path = os.path.join(basedir, cur_relpath)
-                    if os.path.isdir(cur_path):
+                    cur_relpath = relpath / name
+                    cur_path = g_root_dir / cur_relpath
+                    if cur_path.is_dir():
                         cur_dir = _Directory(
-                            basedir, cur_relpath, max_depth=max_depth - 1, filter=filter
+                            cur_relpath,
+                            max_depth=max_depth - 1,
+                            filter=filter,
                         )
                         if cur_dir.children:
                             self.children.append(cur_dir)
@@ -225,12 +227,14 @@ class _Directory(object):
 
 class _SlideFile(object):
     def __init__(self, relpath):
-        self.name = os.path.basename(relpath)
+        self.name = relpath.name
         self.url_path = relpath.replace("\\", "/")
 
 
 def setup(app):
-    app.basedir = os.path.abspath(app.config["SLIDE_DIR"])
+    global g_root_dir
+    g_root_dir = Path(app.config["SLIDE_DIR"]).resolve()
+    app.logger.info(f"Server root path: {g_root_dir}")
     config_map = {
         "DEEPZOOM_TILE_SIZE": "tile_size",
         "DEEPZOOM_OVERLAP": "overlap",
@@ -246,7 +250,7 @@ def _setup():
 
 
 @app.errorhandler(404)
-def page_not_found(e):
+def page_not_found(_):
     # note that we set the 404 status explicitly
     if app.config["isStandalone"]:
         return (
@@ -259,7 +263,7 @@ def page_not_found(e):
         return (
             render_template(
                 "server/files.html",
-                root_dir=_Directory(app.basedir, max_depth=app.config["FOLDER_DEPTH"]),
+                root_dir=_Directory(max_depth=app.config["FOLDER_DEPTH"]),
                 message="Impossible to load this file",
             ),
             404,
@@ -267,30 +271,25 @@ def page_not_found(e):
 
 
 def _get_slide(path):
-    path = os.path.abspath(os.path.join(app.basedir, path))
-    if not path.startswith(app.basedir):
+    path = (g_root_dir / path).resolve()
+    if not path.is_relative_to(g_root_dir):
         # Directory traversal
         abort(404)
-    if not os.path.exists(path):
+    if not path.exists():
         abort(404)
     try:
         slide = app.cache.get(path)
-        slide.filename = os.path.basename(path)
+        slide.filename = path.name
         return slide
     except:
         if ".tissuumaps" in path:
             abort(404)
         try:
-            newpath = (
-                os.path.dirname(path)
-                + "/.tissuumaps/"
-                + os.path.splitext(os.path.basename(path))[0]
-                + ".tif"
-            )
-            if not os.path.isdir(os.path.dirname(path) + "/.tissuumaps/"):
-                os.makedirs(os.path.dirname(path) + "/.tissuumaps/")
+            dot_tmap_path = path.parent / ".tissuumaps"
+            newpath = dot_tmap_path / (path.stem + ".tif")
+            if not dot_tmap_path.is_dir():
+                dot_tmap_path.mkdir(parent=True)
             path = ImageConverter(path, newpath).convert()
-            # imgPath = imgPath.replace("\\","/")
             return _get_slide(path)
         except:
             import traceback
@@ -302,22 +301,21 @@ def _get_slide(path):
 @app.route("/")
 @requires_auth
 def index():
-    # return render_template('files.html', root_dir=_Directory(app.basedir, max_depth=app.config['FOLDER_DEPTH']))
     if app.config["isStandalone"]:
         return render_template("standalone/files.html")
     else:
         return render_template(
             "server/files.html",
-            root_dir=_Directory(app.basedir, max_depth=app.config["FOLDER_DEPTH"]),
+            root_dir=_Directory(max_depth=app.config["FOLDER_DEPTH"]),
         )
 
 
 @app.route("/web/<path:path>")
 @requires_auth
 def base_static(path):
-    completePath = os.path.abspath(os.path.join(app.basedir, path))
-    directory = os.path.dirname(completePath) + "/web/"
-    filename = os.path.basename(completePath)
+    complete_path = (g_root_dir / path).resolve()
+    directory = complete_path.parent / "web"
+    filename = complete_path.name
     return send_from_directory(directory, filename)
 
 
@@ -332,9 +330,6 @@ def slide(path):
         (name, url_for("dzi_asso", path=path, associated_name=name))
         for name in slide.associated_images.keys()
     )
-    # folder_dir = _Directory(os.path.abspath(app.basedir)+"/",
-    #                        os.path.dirname(path))
-    #
     if app.config["isStandalone"]:
         return render_template(
             "standalone/tissuumaps.html",
@@ -346,17 +341,14 @@ def slide(path):
             associated=associated_urls,
         )
     else:
-        folder_dir = _Directory(
-            os.path.abspath(app.basedir) + "/", os.path.dirname(path)
-        )
+        folder_dir = _Directory(path.parent)
         if "private" in path:
             root_dir = _Directory(
-                os.path.abspath(app.basedir) + "/",
-                os.path.dirname(path),
+                path.parent,
                 max_depth=app.config["FOLDER_DEPTH"],
             )
         else:
-            root_dir = _Directory(app.basedir, max_depth=app.config["FOLDER_DEPTH"])
+            root_dir = _Directory(max_depth=app.config["FOLDER_DEPTH"])
         return render_template(
             "server/tissuumaps.html",
             plugins=app.config["PLUGINS"],
@@ -379,14 +371,14 @@ def ping():
 @app.route("/<path:path>.tmap", methods=["GET", "POST"])
 @requires_auth
 def tmapFile(path):
-    jsonFilename = os.path.abspath(os.path.join(app.basedir, path) + ".tmap")
+    jsonFilename = (g_root_dir / (path + ".tmap")).resolve()
     if request.method == "POST":
         state = request.get_json(silent=False)
         with open(jsonFilename, "w") as jsonFile:
             json.dump(state, jsonFile, indent=4, sort_keys=True)
         return state
     else:
-        if os.path.isfile(jsonFilename):
+        if jsonFilename.is_file():
             try:
                 with open(jsonFilename, "r") as jsonFile:
                     state = json.load(jsonFile)
@@ -409,18 +401,15 @@ def tmapFile(path):
                 jsonProject=state,
             )
         else:
-            folder_dir = _Directory(
-                os.path.abspath(app.basedir) + "/", os.path.dirname(path)
-            )
+            folder_dir = _Directory(path.parent)
             if "private" in path:
                 root_dir = _Directory(
-                    os.path.abspath(app.basedir) + "/",
-                    os.path.dirname(path),
+                    path.parent,
                     max_depth=app.config["FOLDER_DEPTH"],
                     filter=".tmap",
                 )
             else:
-                root_dir = _Directory(app.basedir, max_depth=app.config["FOLDER_DEPTH"])
+                root_dir = _Directory(max_depth=app.config["FOLDER_DEPTH"])
 
             return render_template(
                 "server/tissuumaps.html",
@@ -434,32 +423,33 @@ def tmapFile(path):
 @app.route("/<path:path>.csv")
 @requires_auth
 def csvFile(path):
-    completePath = os.path.abspath(os.path.join(app.basedir, path) + ".csv")
-    directory = os.path.dirname(completePath)
-    filename = os.path.basename(completePath)
-    if os.path.isfile(completePath):
+    complete_path = (g_root_dir / (path + ".csv")).resolve()
+    directory = complete_path.parent
+    if complete_path.is_file():
         # Temporary fix for gz files without csv
-        if os.path.isfile(completePath + ".gz"):
-            os.rename(completePath + ".gz", completePath + ".cgz")
+        path_to_gz = Path(str(complete_path) + ".gz")
+        path_to_cgz = Path(str(complete_path) + ".cgz")
+        if path_to_gz.is_file():
+            path_to_gz.rename(path_to_cgz)
 
         generate_cgz = False
-        if not os.path.isfile(completePath + ".cgz"):
+        if not path_to_cgz.is_file():
             generate_cgz = True
-        elif os.path.getmtime(completePath) > os.path.getmtime(completePath + ".cgz"):
+        elif complete_path.stat().st_mtime > path_to_cgz.stat().st_mtime:
             # In this case, the csv file has been recently modified and the cgz file is
             # stale, so it must be regenerated.
             generate_cgz = True
         if generate_cgz:
-            with open(completePath, "rb") as f_in, gzip.open(
-                completePath + ".cgz", "wb", compresslevel=9
+            with open(complete_path, "rb") as f_in, gzip.open(
+                path_to_cgz, "wb", compresslevel=9
             ) as f_out:
                 f_out.writelines(f_in)
 
-        response = make_response(send_from_directory(directory, filename + ".cgz"))
+        response = make_response(send_from_directory(directory, path_to_cgz))
         response.headers["Content-Encoding"] = "gzip"
         response.headers["Vary"] = "Accept-Encoding"
         response.headers["Transfer-Encoding"] = "gzip"
-        response.headers["Content-Length"] = os.path.getsize(completePath + ".cgz")
+        response.headers["Content-Length"] = path_to_cgz.stat().st_size
         response.headers["Content-Type"] = "text/csv; charset=UTF-8"
         return response
     else:
@@ -469,10 +459,10 @@ def csvFile(path):
 @app.route("/<path:path>.json")
 @requires_auth
 def jsonFile(path):
-    completePath = os.path.abspath(os.path.join(app.basedir, path) + ".json")
-    directory = os.path.dirname(completePath)
-    filename = os.path.basename(completePath)
-    if os.path.isfile(completePath):
+    complete_path = (g_root_dir / (path + ".json")).resolve()
+    directory = complete_path.parent
+    filename = complete_path.name
+    if complete_path.is_file():
         return send_from_directory(directory, filename)
     else:
         abort(404)
@@ -555,13 +545,13 @@ def load_plugin(name):
 def runPlugin(pluginName):
     directory = "plugins"
     filename = pluginName + ".js"
-    completePath = os.path.abspath(os.path.join(directory, pluginName + ".js"))
-    directory = os.path.dirname(completePath)
-    filename = os.path.basename(completePath)
-    if os.path.isfile(completePath):
+    complete_path = (directory / filename).resolve()
+    directory = complete_path.parent
+    filename = complete_path.name
+    if complete_path.is_file():
         return send_from_directory(directory, filename)
     else:
-        logging.error(completePath, "is not an existing file.")
+        logging.error(complete_path, "is not an existing file.")
         abort(404)
 
 
@@ -584,7 +574,7 @@ def pluginJS(pluginName, method):
 @app.route("/favicon.ico")
 def favicon():
     return send_from_directory(
-        os.path.join(app.root_path, "static"),
+        g_root_dir / "static",
         "misc/favicon.ico",
         mimetype="image/vnd.microsoft.icon",
     )
