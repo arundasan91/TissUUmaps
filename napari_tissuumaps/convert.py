@@ -161,7 +161,7 @@ def generate_tmap_config(
 
 def generate_shapes_dict(data: FullLayerData, meta: Dict[str, Any]) -> Dict[str, Any]:
     """Generates a dictionary containing the info to plot shapes in Tissuumaps.
-    The dict can later on be exported as a json file or added to the .tmap project
+    The dict can later on be exported as a geoJson file or added to the .tmap project
     file.
 
     Parameters
@@ -177,13 +177,22 @@ def generate_shapes_dict(data: FullLayerData, meta: Dict[str, Any]) -> Dict[str,
     Dict[str, Any]
         A dictionary containing the information to draw the shapes in Tissuumaps.
     """
-    shape_dict = {}
+    shape_dict = {"type": "FeatureCollection", "features": []}
     for i, shape in enumerate(data):
         shape_type = meta["shape_type"][i]
         shape_name = meta["name"] + f"_{shape_type}_{i+1}"
+        shape_color = (255 * meta["face_color"][i, :3]).astype(int).tolist()
         # We enumerate each shapes that appear in the layer
-        subshape_dict = {}
-        subshape_dict["id"] = shape_name
+        subshape_dict = {
+            "type": "Feature",
+            "geometry": {"type": "MultiPolygon"},
+            "properties": {
+                "name": shape_name,
+                "classification": {"name": ""},
+                "color": shape_color,
+                "isLocked": False,
+            },
+        }
         # Different shapes have different points to draw
         points_to_draw = []
         if shape_type == "ellipse":
@@ -222,57 +231,18 @@ def generate_shapes_dict(data: FullLayerData, meta: Dict[str, Any]) -> Dict[str,
             assert isinstance(shape, np.ndarray)
             points_to_draw = shape
 
-        # Points with pixel positions
-        points_array = []
-        _xmin, _xmax, _ymin, _ymax = np.inf, -np.inf, np.inf, -np.inf
-        dimensions = current_viewer().dims.range
-        width, height = dimensions[0][1], dimensions[1][1]
-        for _points in points_to_draw:
-            points = [_points[1] / height, _points[0] / width]
-            points_array.append({"x": points[0], "y": points[1]})
-            _xmin = _xmin if points[0] > _xmin else points[0]
-            _xmax = _xmax if points[0] < _xmax else points[0]
-            _ymin = _ymin if points[1] > _ymin else points[1]
-            _ymax = _ymax if points[1] < _ymax else points[1]
-        subshape_dict["points"] = [[points_array]]
-        # Points with normalized positions (in [0,1])
-        global_points_array = []
-        _gxmin, _gxmax, _gymin, _gymax = np.inf, -np.inf, np.inf, -np.inf
-        for _points in points_to_draw:
-            points = [_points[1], _points[0]]
-            global_points_array.append({"x": points[0], "y": points[1]})
-            _gxmin = _gxmin if points[0] > _gxmin else points[0]
-            _gxmax = _gxmax if points[0] < _gxmax else points[0]
-            _gymin = _gymin if points[1] > _gymin else points[1]
-            _gymax = _gymax if points[1] < _gymax else points[1]
-        subshape_dict["globalPoints"] = [[global_points_array]]
-        shape_color = rgb2hex(meta["face_color"][i])
-        shape_settings = {
-            "regionName": shape_name,
-            "regionClass": None,
-            "barcodeHistogram": [],
-            "len": 1,
-            "_xmin": _xmin,
-            "_xmax": _xmax,
-            "_ymin": _ymin,
-            "_ymax": _ymax,
-            "_gxmin": _gxmin,
-            "_gxmax": _gxmax,
-            "_gymin": _gymin,
-            "_gymax": _gymax,
-            "polycolor": shape_color,
-            "associatedPoints": [],
-            "filled": True,
-        }
-        subshape_dict.update(shape_settings)
+        # The columns are swapped due to conventional differences between Napari (y, x)
+        # and TissUUmaps (x, y)
+        coordinates = points_to_draw[:, [1, 0]].tolist()
+        subshape_dict["geometry"]["coordinates"] = [[coordinates]]
         # Adding the properties, if there are any
         properties = meta.get("properties", {}).copy()
         for prop in properties:
             if isinstance(properties[prop], np.ndarray):
                 properties[prop] = properties[prop].tolist()[i]
-        subshape_dict["properties"] = properties
+        subshape_dict["properties"]["extra"] = properties
         # We add it to the full dict
-        shape_dict[shape_name] = subshape_dict
+        shape_dict["features"].append(subshape_dict)
     return shape_dict
 
 
