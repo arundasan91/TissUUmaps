@@ -1,17 +1,16 @@
 # 🏝 napari-tissuumaps 🧫
 
-[![License](https://img.shields.io/pypi/l/napari-tissuumaps.svg?color=green)](https://github.com/npielawski/napari-tissuumaps/raw/master/LICENSE)
+[![License](https://img.shields.io/pypi/l/napari-tissuumaps.svg?color=green)](https://github.com/TissUUmaps/napari-tissuumaps/raw/master/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/napari-tissuumaps.svg?color=green)](https://pypi.org/project/napari-tissuumaps)
 [![Python Version](https://img.shields.io/pypi/pyversions/napari-tissuumaps.svg?color=green)](https://python.org)
-[![tests](https://github.com/wahlby-lab/napari-tissuumaps/workflows/tests/badge.svg)](https://github.com/wahlby-lab/napari-tissuumaps/actions)
-[![codecov](https://codecov.io/gh/wahlby-lab/napari-tissuumaps/branch/master/graph/badge.svg)](https://codecov.io/gh/wahlby-lab/napari-tissuumaps)
+[![tests](https://github.com/TissUUmaps/napari-tissuumaps/workflows/tests/badge.svg)](https://github.com/TissUUmaps/napari-tissuumaps/actions)
+[![codecov](https://codecov.io/gh/TissUUmaps/napari-tissuumaps/branch/master/graph/badge.svg)](https://codecov.io/gh/TissUUmaps/napari-tissuumaps)
 
-A plugin to add compatibility with [TissUUmaps](https://tissuumaps.research.it.uu.se/).
+A Napari plugin to add compatibility with [TissUUmaps](https://tissuumaps.research.it.uu.se/).
 
 ----------------------------------
 
-This plugins adds a new writer to [Napari] to export projects to [TissUUmaps](https://tissuumaps.research.it.uu.se/).
-Exported projects can than be open on the browser or on a standalone GUI with [FlaskTissumaps](https://github.com/wahlby-lab/FlaskTissUUmaps).
+This plugins adds a new writer to [Napari] to export projects to [TissUUmaps](https://github.com/TissUUmaps/TissUUmaps). Exported projects can then be open on the browser or on a standalone GUI with [TissUUmaps](https://github.com/TissUUmaps/TissUUmaps). More information and demonstrations are available on the [TissUUmaps webpage](https://tissuumaps.research.it.uu.se/).
 
 <!--
 Don't miss the full getting started guide to set up your new package:
@@ -30,7 +29,7 @@ https://napari.org/docs/plugins/index.html
 The plugin now supports:
 
 * Exporting images
-* Exporting labels (the colors follow TissUUmaps colormaps)
+* Exporting labels
 * Exporting points
 * Exporting shapes, including:
     * Polygons
@@ -39,8 +38,7 @@ The plugin now supports:
     * Paths
     * Ellipses
 
-The plugin exports the right color for the points and shapes and also saves the
-visibility/opacity of each layers.
+The plugin exports the right color for the points, shapes and labels and also saves the visibility/opacity of each layers. The shapes are exported in the GeoJSON format, the points in CSV files, and images as TIFFs.
 
 ## 📺 Installation
 
@@ -90,7 +88,7 @@ If you encounter any problems, please [file an issue] along with a detailed desc
 [Mozilla Public License 2.0]: https://www.mozilla.org/media/MPL/2.0/index.txt
 [cookiecutter-napari-plugin]: https://github.com/napari/cookiecutter-napari-plugin
 
-[file an issue]: https://github.com/npielawski/napari-tissuumaps/issues
+[file an issue]: https://github.com/TissUUmaps/napari-tissuumaps/issues
 
 [napari]: https://github.com/napari/napari
 [tox]: https://tox.readthedocs.io/en/latest/
