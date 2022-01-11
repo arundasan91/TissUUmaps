@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional, Union
 from napari.layers.labels.labels import Labels
 from napari.types import FullLayerData
 from napari.utils.io import imsave
-from napari.viewer import current_viewer
 import numpy as np
 from napari_tissuumaps.utils.io import is_path_tissuumaps_filename
 
@@ -122,7 +121,7 @@ def generate_tmap_config(
             )
             layer_filters[str(idx)] = default_filters.copy()
             layer_opacities[str(idx)] = str(meta["opacity"])
-            layer_visibilities[str(idx)] = str(meta["visible"])
+            layer_visibilities[str(idx)] = bool(meta["visible"])
             idx += 1
         elif layer_type == "labels":
             layers.append(
@@ -130,7 +129,7 @@ def generate_tmap_config(
             )
             layer_filters[str(idx)] = default_filters.copy()
             layer_opacities[str(idx)] = str(meta["opacity"])
-            layer_visibilities[str(idx)] = str(meta["visible"])
+            layer_visibilities[str(idx)] = bool(meta["visible"])
             idx += 1
         elif layer_type == "shapes":
             regions.update(generate_shapes_dict(data, meta))
@@ -151,7 +150,9 @@ def generate_tmap_config(
             {"function": "_globalMarkerScale", "module": "glUtils", "value": 7.5},
         ],
     }
-    if internal_shapes:
+    if not regions:
+        config["regions"] = {}
+    elif internal_shapes:
         config["regions"] = regions
     else:
         config["regionFile"] = "regions/regions.json"
