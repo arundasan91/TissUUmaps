@@ -1019,7 +1019,9 @@ glUtils.pick = function(event) {
             const keyName = dataUtils.data[uid]["_gb_col"];
             const groupName = (keyName != null) ? markerData[keyName][markerIndex] : undefined;
             const piechartPropertyName = dataUtils.data[uid]["_pie_col"];
-
+            
+            console.log("uid:", uid, "markerIndex:",markerIndex, "tabName:", tabName, "keyName:", keyName, "groupName:", groupName)
+            // uid: U4C9B1 markerIndex: 878200 tabName: New markers keyName: final_cell_type groupName: Unclassified
             const div = document.createElement("div");
             div.id = "ISS_marker_info";
             div.width = "1px"; div.height = "1px";
@@ -1027,12 +1029,26 @@ glUtils.pick = function(event) {
                 div.innerHTML = markerUtils.makePiechartTable(markerData, markerIndex, piechartPropertyName);
             } else {
                 if (groupName !== undefined) {
-	                div.innerHTML = groupName;
+	                // div.innerHTML = groupName;
+                    console.log(String(dataUtils.data[uid]["_processeddata"].columns))
+                    console.log("------> groupName is what we should be bothered about.")
+                    
+                    gene = String(dataUtils.data[uid]["_processeddata"]['gene'][markerIndex])
+                    cellid = String(dataUtils.data[uid]["_processeddata"]['cell'][markerIndex])
+                    console.log("--> GENE info extracted:", gene)
+                    
+                    div.innerHTML = groupName + "; gene: " + gene + "; cell ID: "+ cellid ;
+                    
                 }
                 else if (dataUtils.data[uid]["_cb_col"]) {
                     div.innerHTML = markerData[dataUtils.data[uid]["_cb_col"]][markerIndex];
                 }
-                console.log("Marker clicked:",tabName, groupName, "index:", markerIndex);
+                // console.log("markerData[dataUtils.data[uid]["_gb_name"]]:", markerData[dataUtils.data[uid]["_gb_name"]])
+                // console.log("markerData[dataUtils.data[uid]["_cb_col"]][markerIndex]:", markerData[dataUtils.data[uid]["_cb_col"]][markerIndex])
+                console.log("div.innerHTML:", div.innerHTML, "Additional txt added to div.innerHTML:", div.innerHTML+"_new_text_added." )
+                
+                console.log("Marker clicked:",tabName, groupName, "index:", markerIndex)
+                //Marker clicked: New markers Vascular endothelial cells index: 1043318
             }
             div.classList.add("viewer-layer", "m-0", "p-1");
 
