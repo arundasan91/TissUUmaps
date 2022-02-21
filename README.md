@@ -1,5 +1,12 @@
+**This is an edited version of TissUUmaps to include gene information when we click on individual reads on the TissUUmap rendering screen.**
+Please see a diff of the changes.
+
+
+
 # TissUUmaps - UU is for Uppsala University ;)
 [TissUUmaps](https://tissuumaps.github.io/) is a browser-based tool for fast visualization and exploration of millions of data points overlaying a tissue sample. TissUUmaps can be used as a web service or locally in your computer, and allows users to share regions of interest and local statistics.
+
+
 
 ## Windows installation
 
